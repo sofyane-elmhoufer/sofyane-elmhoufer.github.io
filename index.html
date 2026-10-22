@@ -94,6 +94,8 @@ nav{position:sticky;top:0;z-index:100;display:flex;justify-content:space-between
 .project-card{background:var(--bg2);padding:1.75rem;transition:background 0.25s;cursor:pointer;position:relative}
 .project-card.featured{grid-column:1/-1;background:var(--bg3);border-bottom:1px solid var(--border)}
 .project-card:hover{background:#131820}
+.project-card.wide{grid-column:1/-1}
+.project-card.static{cursor:default}
 .project-card::before{content:'';position:absolute;inset:0;border:1px solid transparent;transition:border-color 0.25s;pointer-events:none}
 .project-card:hover::before{border-color:rgba(0,229,176,0.12)}
 .project-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem}
@@ -149,7 +151,7 @@ nav{position:sticky;top:0;z-index:100;display:flex;justify-content:space-between
   .hero{padding:3rem 0 2.5rem}
   .stats{grid-template-columns:repeat(2,1fr)}
   .projects-grid{grid-template-columns:1fr}
-  .project-card.featured{grid-column:1}
+  .project-card.featured,.project-card.wide{grid-column:1}
   .avatar-box{width:80px;height:80px}
   .avatar-initials{font-size:1.2rem}
 }
@@ -165,7 +167,7 @@ footer span{color:var(--accent)}
 <div class="toast" id="toast"></div>
 
 <nav>
-  <div class="nav-logo" onclick="window.scrollTo({top:0,behavior:'smooth'})">Sofyane00.dev</div>
+  <div class="nav-logo" onclick="window.scrollTo({top:0,behavior:'smooth'})">sofyane-elmhoufer</div>
   <ul class="nav-links">
     <li><a href="#about">About</a></li>
     <li><a href="#projects">Projects</a></li>
@@ -192,23 +194,23 @@ footer span{color:var(--accent)}
           Driven by curiosity, shaped by real data.
         </p>
         <div class="cta-row">
-          <a class="btn-primary" href="https://github.com/Sofyane00" target="_blank" rel="noopener">GitHub ↗</a>
+          <a class="btn-primary" href="https://github.com/sofyane-elmhoufer" target="_blank" rel="noopener">GitHub ↗</a>
           <a class="btn-ghost" href="#contact">Contact Me</a>
           <a class="btn-ghost" href="https://linkedin.com/in/sofyane-el-mhoufer" target="_blank" rel="noopener">LinkedIn ↗</a>
         </div>
       </div>
       <div class="avatar-box">
-        <div class="avatar-initials">S.E</div>
+        <div class="avatar-initials">SE</div>
       </div>
     </div>
   </section>
 
   <!-- STATS -->
   <div class="stats fade-in">
-    <div class="stat"><span class="stat-num" data-count="3">0</span><span class="stat-label">Projects</span></div>
+    <div class="stat"><span class="stat-num" data-count="4">0</span><span class="stat-label">Projects</span></div>
     <div class="stat"><span class="stat-num" data-count="3">0</span><span class="stat-label">Certifications</span></div>
     <div class="stat"><span class="stat-num">89.4%</span><span class="stat-label">MNIST Accuracy</span></div>
-    <div class="stat"><span class="stat-num">~90%</span><span class="stat-label">Heart Disease F1</span></div>
+    <div class="stat"><span class="stat-num">~90%</span><span class="stat-label">Heart Disease Accuracy</span></div>
   </div>
 
   <!-- SKILLS -->
@@ -220,7 +222,7 @@ footer span{color:var(--accent)}
     <div class="skill-card">
       <div class="skill-icon">CORE_LANG</div>
       <div class="skill-name">Languages</div>
-      <div class="skill-desc">Python · R · SQL · Bash</div>
+      <div class="skill-desc">Python · SQL</div>
     </div>
     <div class="skill-card">
       <div class="skill-icon">DATA_ENG</div>
@@ -228,9 +230,14 @@ footer span{color:var(--accent)}
       <div class="skill-desc">Pandas · NumPy · Scikit-learn · Matplotlib · Seaborn</div>
     </div>
     <div class="skill-card">
-      <div class="skill-icon">DL_FRAME</div>
-      <div class="skill-name">Deep Learning</div>
-      <div class="skill-desc">PyTorch · Keras · Gradient Descent · Softmax · Cross-Entropy</div>
+      <div class="skill-icon">ML_CORE</div>
+      <div class="skill-name">ML Fundamentals</div>
+      <div class="skill-desc">Gradient Descent · Softmax · Cross-Entropy · Random Forest · Logistic Regression</div>
+    </div>
+    <div class="skill-card">
+      <div class="skill-icon">WEB_APP</div>
+      <div class="skill-name">Web &amp; APIs</div>
+      <div class="skill-desc">Flask · Express · React · MySQL — AutoPredict (team)</div>
     </div>
     <div class="skill-card">
       <div class="skill-icon">IOT_SYS</div>
@@ -256,17 +263,40 @@ footer span{color:var(--accent)}
   </div>
   <div class="projects-grid fade-in">
 
-    <div class="project-card featured" onclick="window.open('https://github.com/Sofyane00/heart-disease-prediction','_blank')">
+    <div class="project-card featured" onclick="window.open('https://github.com/sofyane-elmhoufer/AutoPredict','_blank')">
       <div class="project-top">
         <div class="project-meta">
           <span class="project-number">001 — FEATURED</span>
+          <span class="project-date">Jul – Oct 2026</span>
+        </div>
+        <span class="project-arrow">↗</span>
+      </div>
+      <div class="project-title">AutoPredict — Used Car Price Estimator</div>
+      <div class="project-desc">Web app that estimates the price of a used car in Morocco from a model trained on 7,903 Avito listings. React frontend, Express backend, Flask ML service. Team project — I built the data cleaning, the model and the prediction service.</div>
+      <div class="project-highlight">Random Forest: R² = 0.84, mean error ≈ 12,800 MAD. Estimate cache, user accounts with history &amp; PDF/CSV export, admin back-office.</div>
+      <div class="project-tags">
+        <span class="tag">Python</span>
+        <span class="tag">Scikit-learn</span>
+        <span class="tag">Flask</span>
+        <span class="tag purple">Random Forest</span>
+        <span class="tag purple">REST API</span>
+        <span class="tag gray">React</span>
+        <span class="tag gray">MySQL</span>
+        <span class="tag gray">Team Project</span>
+      </div>
+    </div>
+
+    <div class="project-card" onclick="window.open('https://github.com/sofyane-elmhoufer/heart-disease-prediction','_blank')">
+      <div class="project-top">
+        <div class="project-meta">
+          <span class="project-number">002</span>
           <span class="project-date">Mar 2026</span>
         </div>
         <span class="project-arrow">↗</span>
       </div>
       <div class="project-title">Heart Disease Prediction</div>
       <div class="project-desc">Full ML pipeline on real clinical data — 1,025 patients, 14 variables. EDA, preprocessing, model comparison and interactive diagnostic system.</div>
-      <div class="project-highlight">Logistic Regression ~90% vs Decision Tree ~77% — correlation heatmap, confusion matrix &amp; target-based distributions.</div>
+      <div class="project-highlight">Logistic Regression ~90% accuracy vs Decision Tree ~77% — correlation heatmap, confusion matrix &amp; target-based distributions.</div>
       <div class="project-tags">
         <span class="tag">Python</span>
         <span class="tag">Scikit-learn</span>
@@ -277,10 +307,10 @@ footer span{color:var(--accent)}
       </div>
     </div>
 
-    <div class="project-card" onclick="window.open('https://github.com/Sofyane00/mnist_scratch','_blank')">
+    <div class="project-card" onclick="window.open('https://github.com/sofyane-elmhoufer/mnist_scratch','_blank')">
       <div class="project-top">
         <div class="project-meta">
-          <span class="project-number">002</span>
+          <span class="project-number">003</span>
           <span class="project-date">Jan 2026</span>
         </div>
         <span class="project-arrow">↗</span>
@@ -296,13 +326,12 @@ footer span{color:var(--accent)}
       </div>
     </div>
 
-    <div class="project-card" onclick="showToast('Smart Greenhouse repo coming to GitHub soon!')">
+    <div class="project-card wide static">
       <div class="project-top">
         <div class="project-meta">
-          <span class="project-number">003</span>
+          <span class="project-number">004</span>
           <span class="project-date">Apr – Jun 2025</span>
         </div>
-        <span class="project-arrow">↗</span>
       </div>
       <div class="project-title">Smart Greenhouse — IoT Project</div>
       <div class="project-desc">Autonomous connected greenhouse — IoT + automation + renewable energy. Arduino Uno &amp; ESP8266. Team project.</div>
@@ -362,7 +391,7 @@ footer span{color:var(--accent)}
     <p>Open to internships, research collaborations, and ambitious projects.</p>
     <div class="contact-links">
       <button class="btn-primary" onclick="copyEmail()">sofyaneelmhoufer@gmail.com</button>
-      <a class="btn-ghost" href="https://github.com/Sofyane00" target="_blank" rel="noopener">GitHub ↗</a>
+      <a class="btn-ghost" href="https://github.com/sofyane-elmhoufer" target="_blank" rel="noopener">GitHub ↗</a>
       <a class="btn-ghost" href="https://linkedin.com/in/sofyane-el-mhoufer" target="_blank" rel="noopener">LinkedIn ↗</a>
     </div>
   </div>
