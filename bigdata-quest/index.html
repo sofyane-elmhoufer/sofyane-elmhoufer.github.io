@@ -291,6 +291,87 @@ canvas#fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-in
   *,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}
 }
 
+/* =====================================================================
+   ONGLETS + COURS
+   ===================================================================== */
+.tabbar{position:sticky;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:40;display:flex;gap:6px;padding:6px;margin:26px auto 0;max-width:380px;
+  background:var(--ink2);border:3px solid var(--line);border-radius:24px;box-shadow:0 5px 0 var(--line),0 0 0 3px var(--ink3)}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer;background:transparent;border:0;border-radius:17px;padding:6px 8px;color:var(--mut);font-size:13px;min-height:54px;justify-content:center}
+.tab b{font-weight:700}
+.tab .ti{display:grid;place-items:center}
+.tab svg{width:26px;height:26px}
+.tab.on{background:var(--sun);color:var(--line);box-shadow:0 3px 0 var(--line)}
+.tab:not(.on):hover{color:var(--txt)}
+
+.shelves{display:grid;gap:30px;padding:8px 0 4px}
+.shelf{--c:var(--sun)}
+.shelf-h{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.shelf-ic{flex:none;width:46px;height:46px;background:var(--ink2);border:3px solid var(--line);border-radius:14px;display:grid;place-items:center;padding:5px}
+.shelf-ic svg{width:100%;height:100%}
+.shelf-t{flex:1;min-width:0}
+.shelf-t small{display:block;font-family:var(--f-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--c)}
+.shelf-t h2{font-size:clamp(20px,4vw,26px)}
+.shelf-t .sub{color:var(--mut);font-size:14px}
+.cnt{flex:none;font-family:var(--f-mono);font-weight:700;font-size:13px;background:var(--ink2);border:3px solid var(--ink3);border-radius:999px;padding:2px 11px;color:var(--mut)}
+.cnt.full{background:var(--mint);color:var(--line);border-color:var(--line)}
+.books{display:grid;grid-template-columns:repeat(auto-fill,minmax(138px,1fr));gap:14px 12px;align-items:end;padding:0 4px}
+.book{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;cursor:pointer;
+  background:var(--paper);color:var(--line);border:3px solid var(--line);border-left:14px solid var(--c);border-radius:6px 14px 14px 6px;
+  padding:10px 10px 10px 10px;box-shadow:3px 5px 0 var(--line);min-height:150px;transform-origin:50% 100%;transition:transform .15s}
+.book:nth-child(3n+2){min-height:164px}
+.book:nth-child(3n){min-height:142px}
+.book:hover{transform:translateY(-5px) rotate(-1.5deg)}
+.book:active{transform:translateY(0)}
+.book .bn{font-family:var(--f-mono);font-weight:700;font-size:12px;background:var(--c);border:2px solid var(--line);border-radius:7px;padding:0 6px}
+.book .bi{width:38px;height:38px;display:block}
+.book .bi svg{width:100%;height:100%}
+.book .bt{font-family:var(--f-disp);font-weight:800;font-size:15.5px;line-height:1.15;word-break:break-word;hyphens:auto}
+.book .bm{margin-top:auto;font-size:12px;color:#4b4880;font-weight:500}
+.book.read{background:#e3fbf1}
+.book .bchk{position:absolute;right:-9px;top:-9px;width:28px;height:28px;border-radius:50%;background:var(--mint);border:3px solid var(--line);display:grid;place-items:center}
+.plank{height:16px;margin:0 -6px;background:linear-gradient(#d9a066,#c18247);border:3px solid var(--line);border-radius:6px;box-shadow:0 6px 0 var(--line)}
+
+/* leçon */
+.lesson{padding-top:16px;display:grid;gap:16px}
+.lcard{background:var(--paper);color:var(--line);border:3px solid var(--line);border-radius:22px;box-shadow:0 6px 0 var(--line);padding:16px 16px 10px;min-width:0}
+.lcard.rise{animation:rise .3s both}
+.lstep{display:inline-block;font-family:var(--f-mono);font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;background:var(--wc,var(--sun));border:3px solid var(--line);border-radius:8px;padding:1px 9px}
+.lcard h2{font-size:clamp(23px,5vw,31px);margin:10px 0 12px}
+.lbody{font-size:17px;line-height:1.6;min-width:0}
+.lbody p{margin:0 0 .85em}
+.lbody ul,.lbody ol{margin:.2em 0 .95em;padding-left:1.25em}
+.lbody li{margin:.35em 0}
+.lbody code{font-family:var(--f-mono);font-size:.86em;background:var(--paper2);padding:1px 6px;border-radius:6px;border:2px solid rgba(11,10,38,.22);word-break:break-word}
+.lbody mark{background:var(--sun);padding:0 4px;border-radius:5px;color:var(--line)}
+.lbody .tg{display:inline-block;background:var(--c,var(--sun));border:2px solid var(--line);border-radius:7px;padding:0 7px;font-weight:700;font-size:.92em;line-height:1.35}
+.lbody pre.code{margin:0 0 14px;font-size:13.5px;line-height:1.5}
+.lbody h3{font-size:19px;margin:.4em 0 .5em}
+.fig{margin:6px 0 16px;background:var(--ink2);border:3px solid var(--line);border-radius:18px;padding:8px;box-shadow:0 4px 0 var(--line)}
+.fig svg.art{display:block;width:100%;height:auto;max-width:640px;margin:0 auto}
+.fig figcaption{color:var(--mut);font-size:13.5px;text-align:center;padding:6px 6px 2px;line-height:1.35}
+.co{--bg:#fff;border:3px solid var(--line);border-radius:16px;background:var(--bg);padding:12px 14px 4px;margin:0 0 15px;position:relative}
+.co>.lab{display:inline-block;font-family:var(--f-mono);font-weight:700;font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;background:var(--line);color:var(--paper);border-radius:7px;padding:1px 9px;margin:0 0 7px}
+.co.say{--bg:#d9f8eb} .co.ex{--bg:#dcf0ff} .co.key{--bg:#fff0b5} .co.prof{--bg:#ebe4ff} .co.warn{--bg:#ffdad4}
+.co.say>.lab{background:#0f8f63} .co.ex>.lab{background:#1c74ad} .co.key>.lab{background:#8a6400} .co.prof>.lab{background:#5b43b8} .co.warn>.lab{background:#b3261e}
+.co p:last-child,.co ul:last-child,.co ol:last-child{margin-bottom:.7em}
+.tblw{overflow-x:auto;margin:0 0 15px;border:3px solid var(--line);border-radius:14px;background:#fff}
+table.ct{border-collapse:collapse;width:100%;font-size:15px;min-width:440px}
+table.ct th{background:var(--line);color:var(--paper);padding:8px 10px;text-align:left;font-family:var(--f-disp)}
+table.ct td{padding:8px 10px;border-top:2px solid rgba(11,10,38,.14);vertical-align:top}
+table.ct tr:nth-child(even) td{background:rgba(11,10,38,.04)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 15px}
+.pair>div{border:3px solid var(--line);border-radius:14px;padding:10px 12px 4px;background:#fff}
+.pair>div>b.h{display:block;font-family:var(--f-disp);font-size:17px;margin-bottom:5px}
+@media (max-width:560px){.pair{grid-template-columns:1fr}}
+.defs{display:grid;gap:10px;margin:0 0 15px}
+.defs>div{display:flex;gap:11px;align-items:flex-start;background:#fff;border:3px solid var(--line);border-radius:14px;padding:9px 12px}
+.defs>div>i{flex:none;font-style:normal;font-family:var(--f-disp);font-weight:800;font-size:20px;width:36px;height:36px;border-radius:10px;border:3px solid var(--line);display:grid;place-items:center;background:var(--c,var(--sun))}
+.defs>div>span{min-width:0;line-height:1.45}
+.defs b{font-weight:700}
+.lnav{display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center;margin:2px 0 6px}
+.hud .track i[role=button]{cursor:pointer}
+@media (max-width:420px){.lbody{font-size:16.5px}.lcard{padding:14px 13px 8px}}
+
 </style>
 </head>
 <body>
@@ -450,7 +531,7 @@ function renderMap(){
     h('button',{class:'btn ghost small',onclick:()=>{S.unlockAll=!S.unlockAll;save();renderMap();}},S.unlockAll?'Verrouiller la progression':'Déverrouiller tous les niveaux'),
     h('button',{class:'btn ghost small',onclick:ev=>{if(S._ask){S={xp:0,done:{},sound:S.sound,unlockAll:false};save();renderMap();}else{S._ask=true;ev.target.textContent='Cliquer encore pour tout effacer';setTimeout(()=>{S._ask=false;},3000);}}},'Effacer ma progression'));
   if(window.__footHook)window.__footHook(foot);
-  app.append(foot);
+  app.append(foot,tabbar('quest'));
 }
 
 /* ---------- niveau ---------- */
@@ -778,6 +859,132 @@ SCENES.boss=(sc,ctx)=>{
   }
   ask();
 };
+
+/* =====================================================================
+   ONGLET « COURS » : étagères (chapitres) -> livres (leçons) -> étapes
+   Le contenu (COURSE) vient du paquet chiffré ; ce fichier ne contient que le moteur.
+   ===================================================================== */
+const TAB_ICONS={
+  quest:'<svg viewBox="0 0 28 28" aria-hidden="true"><path d="M6 22c0-6 8-4 8-9s-6-4-6-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 5"/><circle cx="7" cy="23" r="3.4" fill="currentColor"/><path d="M17 5h8v7l-4-2-4 2z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>',
+  course:'<svg viewBox="0 0 28 28" aria-hidden="true"><path d="M4 6c4-2 7-1 10 1v16c-3-2-6-3-10-1z" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linejoin="round"/><path d="M24 6c-4-2-7-1-10 1v16c3-2 6-3 10-1z" fill="currentColor" stroke="currentColor" stroke-width="2.8" stroke-linejoin="round"/></svg>'
+};
+function tabbar(active){
+  const mk=(id,label,fn)=>h('button',{class:'tab'+(active===id?' on':''),'aria-current':active===id?'page':null,
+    onclick:()=>{if(active!==id){sfx.pop();fn();}}},h('span',{class:'ti',html:TAB_ICONS[id]}),h('b',{},label));
+  return h('nav',{class:'tabbar','aria-label':'Navigation principale'},mk('quest','Aventure',renderMap),mk('course','Cours',()=>renderShelves()));
+}
+
+/* ---------- état de lecture ---------- */
+const readMap=()=>(S.read=S.read||{});
+const courseData=()=>window.COURSE||[];
+function allLessons(){const o=[];courseData().forEach((sh,si)=>sh.lessons.forEach((L,li)=>o.push({si,li,sh,L})));return o;}
+function nextUnread(from){
+  const a=allLessons(),r=readMap();
+  const start=from==null?0:Math.max(0,a.findIndex(x=>x.si===from.si&&x.li===from.li)+1);
+  for(let k=0;k<a.length;k++){const x=a[(start+k)%a.length];if(!r[x.L.id])return x;}
+  return null;
+}
+
+/* ---------- les étagères ---------- */
+function renderShelves(){
+  run=null;app.replaceChildren();window.scrollTo(0,0);
+  const data=courseData(),r=readMap(),all=allLessons();
+  const readN=all.filter(x=>r[x.L.id]).length;
+  let resume=null;
+  if(S.cpos){const x=all.find(y=>y.si===S.cpos.si&&y.li===S.cpos.li);if(x&&!r[x.L.id])resume=S.cpos;}
+  const nu=resume||nextUnread();
+  const hero=h('header',{class:'hero'},
+    h('div',{html:octet(readN?'happy':'think',110),style:'flex:none'}),
+    h('div',{class:'txt'},
+      h('h1',{html:'Le <em>Cours</em>'}),
+      h('p',{},'Tout le cours du prof, réécrit simplement : une étagère par chapitre, un livre par leçon, et des étapes courtes avec schémas et exemples.'),
+      h('div',{class:'stat-row'},
+        h('span',{class:'pill',html:`Leçons lues <b>${readN}/${all.length}</b>`}),
+        h('span',{class:'pill',html:`Étagères <b>${data.length}</b>`})),
+      nu?h('button',{class:'btn sun big',onclick:()=>openLesson(nu.si,nu.li,resume&&nu.si===resume.si&&nu.li===resume.li?resume.st:0)},readN?'Continuer la lecture':'Commencer la lecture'):h('span',{class:'pill',html:'Tout le cours est lu <b>bravo !</b>'})));
+  app.append(hero);
+  const room=h('div',{class:'shelves'});
+  data.forEach((sh,si)=>{
+    const n=sh.lessons.length,d=sh.lessons.filter(L=>r[L.id]).length;
+    const sec=h('section',{class:'shelf',style:`--c:${sh.c}`},
+      h('div',{class:'shelf-h'},
+        h('div',{class:'shelf-ic',html:sh.ic&&window.ICO&&ICO[sh.ic]?`<svg viewBox="0 0 40 40" aria-hidden="true">${ICO[sh.ic](sh.c)}</svg>`:''}),
+        h('div',{class:'shelf-t'},h('small',{},`Étagère ${si+1}`),h('h2',{},sh.title),sh.sub?h('span',{class:'sub'},sh.sub):null),
+        h('span',{class:'cnt'+(d===n?' full':'')},`${d}/${n}`)),
+      h('div',{class:'books'},sh.lessons.map((L,li)=>{
+        const done=!!r[L.id];
+        return h('button',{class:'book'+(done?' read':''),style:`--k:${(li%3)}`,onclick:()=>{sfx.pop();openLesson(si,li,0);},'aria-label':`${L.title}${done?' (lu)':''}`},
+          h('span',{class:'bn'},String(li+1)),
+          h('span',{class:'bi',html:L.ic&&window.ICO&&ICO[L.ic]?`<svg viewBox="0 0 40 40" aria-hidden="true">${ICO[L.ic](sh.c)}</svg>`:''}),
+          h('span',{class:'bt'},L.title),
+          h('span',{class:'bm'},`${L.steps.length} étapes`),
+          done?h('span',{class:'bchk',html:checkSvg}):null);
+      })),
+      h('div',{class:'plank'}));
+    room.append(sec);
+  });
+  app.append(room,tabbar('course'));
+}
+
+/* ---------- lecteur de leçon ---------- */
+let cur=null;
+function openLesson(si,li,st=0){
+  const sh=courseData()[si],L=sh&&sh.lessons[li];if(!L)return renderShelves();
+  cur={si,li,st:Math.min(Math.max(0,st),L.steps.length-1)};
+  app.replaceChildren();document.documentElement.style.setProperty('--wc',sh.c);
+  const hud=h('div',{class:'hud'},
+    h('button',{class:'btn small',onclick:()=>{cur=null;renderShelves();},'aria-label':'Retour aux étagères'},'← Étagères'),
+    h('div',{class:'ttl'},h('small',{},`Étagère ${si+1} · ${sh.title}`),h('b',{},L.title)),
+    h('div',{class:'track',id:'ltrack'}));
+  const body=h('div',{id:'lbody',class:'lesson'});
+  app.append(hud,body);
+  renderStep();
+}
+function renderStep(anim=true){
+  const {si,li,st}=cur,sh=courseData()[si],L=sh.lessons[li],S0=L.steps[st],last=st===L.steps.length-1;
+  S.cpos={si,li,st};save();
+  const tr=$('#ltrack');tr.replaceChildren();
+  L.steps.forEach((_,i)=>{const b=h('i',{class:i<st?'done':i===st?'now':'',role:'button','aria-label':`Étape ${i+1}`,onclick:()=>{cur.st=i;renderStep();}});tr.append(b);});
+  let html='';
+  try{html=[].concat(S0.b()).join('');}catch(err){console.error(err);html='<p>Oups, un schéma n\'a pas pu s\'afficher.</p>';}
+  const card=h('article',{class:'lcard'+(anim?' rise':'')},
+    h('div',{class:'lstep'},`Étape ${st+1} sur ${L.steps.length}`),
+    h('h2',{},S0.t),
+    h('div',{class:'lbody',html}));
+  const nav=h('div',{class:'lnav'},
+    h('button',{class:'btn',disabled:st===0,onclick:()=>go(-1)},'← Précédent'),
+    last?h('button',{class:'btn mint',onclick:finishLesson},'J\'ai fini la leçon ✓'):h('button',{class:'btn sun',onclick:()=>go(1)},'Suivant →'));
+  const host=$('#lbody');host.replaceChildren(card,nav);
+  window.scrollTo(0,0);
+  if(REDUCED)host.querySelectorAll('svg').forEach(s=>{try{s.pauseAnimations()}catch(e){}});
+}
+function go(d){
+  if(!cur)return;const L=courseData()[cur.si].lessons[cur.li],n=cur.st+d;
+  if(n<0||n>=L.steps.length)return;cur.st=n;sfx.pop();renderStep();
+}
+function finishLesson(){
+  const {si,li}=cur,sh=courseData()[si],L=sh.lessons[li],r=readMap(),first=!r[L.id];
+  r[L.id]=true;if(first)S.xp+=10;delete S.cpos;save();
+  sfx.win();confetti(70);
+  const nx=nextUnread({si,li});
+  const lv=L.lv!=null&&window.LEVELS&&LEVELS[L.lv]?L.lv:null;
+  const card=h('article',{class:'lcard rise',style:'text-align:center'},
+    h('div',{html:octet('happy',100),style:'display:flex;justify-content:center'}),
+    h('h2',{},'Leçon terminée !'),
+    h('p',{class:'lead'},first?'+10 XP. Tu peux la relire quand tu veux, elle reste sur l\'étagère.':'Relue avec succès.'),
+    h('div',{class:'lnav',style:'justify-content:center'},
+      nx&&!(nx.si===si&&nx.li===li)?h('button',{class:'btn sun',onclick:()=>openLesson(nx.si,nx.li,0)},`Leçon suivante : ${nx.L.title}`):null,
+      lv!=null?(levelUnlocked(lv)?h('button',{class:'btn mint',onclick:()=>startLevel(lv)},`Jouer le niveau « ${LEVELS[lv].title} »`):h('div',{class:'tip'},`Pour t'entraîner : niveau « ${LEVELS[lv].title} » dans l'Aventure.`)):null,
+      h('button',{class:'btn ghost',onclick:()=>{cur=null;renderShelves();}},'Retour aux étagères')));
+  $('#lbody').replaceChildren(card);
+  window.scrollTo(0,0);
+}
+/* flèches du clavier et balayage tactile */
+document.addEventListener('keydown',e=>{if(cur&&$('#lbody')&&(e.key==='ArrowRight'||e.key==='ArrowLeft')&&!e.target.closest('input,textarea'))go(e.key==='ArrowRight'?1:-1);});
+(()=>{let x0=null,y0=null;
+  document.addEventListener('touchstart',e=>{if(!cur||e.touches.length!==1)return;if(e.target.closest('.tblw,pre'))return;x0=e.touches[0].clientX;y0=e.touches[0].clientY;},{passive:true});
+  document.addEventListener('touchend',e=>{if(x0==null||!cur)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.8)go(dx<0?1:-1);},{passive:true});
+})();
 
 /* =====================================================================
    DÉMARRAGE : déverrouillage du contenu chiffré, service worker, installation
