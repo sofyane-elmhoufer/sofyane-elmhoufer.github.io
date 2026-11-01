@@ -1,7 +1,5 @@
 # ML Quest
 
-Application web installable (PWA) pour apprendre le machine learning : cours interactifs, jeux, cartes de révision, QCM et bibliothèque de code Python.
+Application web installable (PWA) pour apprendre le machine learning.
 
-Fichiers : `index.html`, `manifest.webmanifest`, `sw.js`, `icons/`.
-
-Aucune compilation : ouvrir `index.html` via un serveur statique (GitHub Pages suffit).
+Le contenu (cours, jeux, cartes, QCM, code) est chiffré dans `content.enc.json` (AES-256-GCM, clé dérivée du mot de passe avec PBKDF2). `index.html` ne contient que l'écran de verrouillage : le déchiffrement se fait dans le navigateur, le mot de passe n'est jamais envoyé ni stocké dans le dépôt.
