@@ -5,9 +5,9 @@ import base64
 import contextlib
 import io
 import json
+import os
 import re
 import sys
-import time
 import traceback
 import warnings
 
@@ -25,17 +25,17 @@ try:
 except Exception:
     pass
 
-import os
-
 os.environ.setdefault("SEABORN_DATA", os.path.join(os.getcwd(), "seaborn-data"))
 
 _ns = {"__name__": "__main__"}
+_last = {}  # résultat brut de la dernière cellule exécutée (utilisé par checker.py)
 
 
 def reset():
-    global _ns
+    global _ns, _last
     plt.close("all")
     _ns = {"__name__": "__main__"}
+    _last = {}
     return "ok"
 
 
@@ -60,15 +60,35 @@ def _result_to_out(val, out):
     out["result"] = repr(val)
 
 
-def _collect_figures():
-    images = []
+def _fig_sig(fig):
+    """Signature simple d'un graphique : nombre d'axes, types d'éléments, libellés d'axes."""
+    sig = {"axes": 0, "lines": 0, "patches": 0, "collections": 0, "texts": 0, "images": 0, "labels": []}
+    labels = set()
+    for ax in fig.get_axes():
+        sig["axes"] += 1
+        sig["lines"] += len(ax.lines)
+        sig["patches"] += len(ax.patches)
+        sig["collections"] += len(ax.collections)
+        sig["texts"] += len(ax.texts)
+        sig["images"] += len(ax.images)
+        for lab in (ax.get_xlabel(), ax.get_ylabel()):
+            if lab:
+                labels.add(lab)
+    sig["labels"] = sorted(labels)
+    return sig
+
+
+def _collect_figures(want_images):
+    sigs, images = [], []
     for num in plt.get_fignums():
         fig = plt.figure(num)
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="white")
-        images.append(base64.b64encode(buf.getvalue()).decode("ascii"))
+        sigs.append(_fig_sig(fig))
+        if want_images:
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="white")
+            images.append(base64.b64encode(buf.getvalue()).decode("ascii"))
     plt.close("all")
-    return images
+    return sigs, images
 
 
 def _format_error(code):
@@ -86,24 +106,67 @@ def _format_error(code):
     return "\n".join(out)
 
 
-def run_cell(code):
-    out = {"stdout": "", "result": None, "result_html": None, "images": [], "error": None}
+def _friendly(exc):
+    """Explication en français, sans donner la solution."""
+    m = str(exc)
+    if isinstance(exc, IndentationError):
+        return "Erreur d'indentation : les lignes d'un même bloc doivent commencer à la même colonne."
+    if isinstance(exc, SyntaxError):
+        return "Erreur de syntaxe : il manque peut-être une parenthèse, un guillemet ou deux-points, ou une valeur après un « = ». Regarde la ligne indiquée."
+    if isinstance(exc, KeyError):
+        return f"Colonne ou clé introuvable : {m}. Vérifie l'orthographe (majuscules, accents) avec df.columns."
+    if isinstance(exc, NameError):
+        return f"Nom inconnu : {m}. As-tu exécuté la cellule de préparation et les cellules précédentes ? Le nom est-il bien écrit ?"
+    if isinstance(exc, AttributeError):
+        return "Cet objet n'a pas cette méthode ou cet attribut. Vérifie l'orthographe et les parenthèses (df.shape sans parenthèses, df.head() avec)."
+    if isinstance(exc, FileNotFoundError):
+        return "Fichier introuvable : vérifie le nom exact du fichier (extension .csv comprise)."
+    if isinstance(exc, TypeError):
+        return "Type incorrect : une fonction a reçu un argument inattendu, ou tu appelles quelque chose qui n'est pas une fonction."
+    if isinstance(exc, ValueError):
+        return "Valeur incorrecte : l'argument a le bon type mais sa valeur ne convient pas (forme des données, NaN, nom de colonne…)."
+    if isinstance(exc, ImportError):
+        return "Module introuvable : vérifie le nom de l'import."
+    if isinstance(exc, ZeroDivisionError):
+        return "Division par zéro."
+    return "Il y a une erreur dans ton code. Lis la dernière ligne du message ci-dessous."
+
+
+def _exec_in(ns, code, want_images=False):
+    """Exécute `code` dans `ns` façon Jupyter et renvoie tout (stdout, valeur, figures, exception)."""
+    res = {"stdout": "", "value": None, "has_value": False, "exc": None, "err_text": None,
+           "empty": False, "figs": [], "images": []}
     buf = io.StringIO()
     try:
         tree = ast.parse(code, "<cell>")
+        res["empty"] = not tree.body
         last = None
         if tree.body and isinstance(tree.body[-1], ast.Expr):
             last = ast.Expression(tree.body.pop().value)
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-            exec(compile(tree, "<cell>", "exec"), _ns)
-            val = eval(compile(last, "<cell>", "eval"), _ns) if last is not None else None
-        if val is not None:
-            _result_to_out(val, out)
-    except BaseException:
-        out["error"] = _format_error(code)
-    out["stdout"] = buf.getvalue()
+            exec(compile(tree, "<cell>", "exec"), ns)
+            if last is not None:
+                val = eval(compile(last, "<cell>", "eval"), ns)
+                if val is not None:
+                    res["value"] = val
+                    res["has_value"] = True
+    except BaseException as e:  # noqa: BLE001
+        res["exc"] = e
+        res["err_text"] = _format_error(code)
+    res["stdout"] = buf.getvalue()
     try:
-        out["images"] = _collect_figures()
+        res["figs"], res["images"] = _collect_figures(want_images)
     except Exception:
-        pass
+        plt.close("all")
+    return res
+
+
+def run_cell(code):
+    global _last
+    res = _exec_in(_ns, code, want_images=True)
+    _last = res
+    out = {"stdout": res["stdout"], "result": None, "result_html": None, "images": res["images"],
+           "error": res["err_text"], "friendly": _friendly(res["exc"]) if res["exc"] is not None else None}
+    if res["has_value"]:
+        _result_to_out(res["value"], out)
     return json.dumps(out)

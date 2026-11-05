@@ -2,6 +2,7 @@ import { decryptPayload } from "./crypto.js";
 
 const PYODIDE_BASE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 const SEABORN_WHEEL = "wheels/seaborn-0.13.2-py3-none-any.whl";
+const CHAT_URL_RE = /^https:\/\/claude\.ai\/chat\/[0-9a-fA-F-]{20,}([/?#].*)?$/;
 
 /* ------------------------------------------------------------ utilitaires */
 const $ = (s, r = document) => r.querySelector(s);
@@ -24,13 +25,15 @@ const store = {
 function toast(msg) {
   const t = el("div", { class: "toast" }, msg);
   document.body.append(t);
-  setTimeout(() => t.remove(), 2600);
+  setTimeout(() => t.remove(), 3200);
 }
 const htmlToText = (h) => { const d = document.createElement("div"); d.innerHTML = h; return d.textContent.replace(/\s+/g, " ").trim(); };
 const clip = (s, n) => (s.length > n ? s.slice(0, n) + "\n…(tronqué)" : s);
+const textOf = (n) => (n ? (n.innerText ?? n.textContent ?? "") : "");
+const isBlankCode = (code) => !code.replace(/#.*$/gm, "").trim();
 
 /* ------------------------------------------------------------ état */
-let DATA = null; // { lessons, datasets, seabornNames }
+let DATA = null; // { lessons, datasets, seabornNames, claudeChatUrl? }
 let py = null;
 let pyPromise = null;
 let execCount = 0;
@@ -38,6 +41,7 @@ let kernelOwner = null;
 let activeCell = null;
 let currentLesson = null;
 let deferredInstall = null;
+let replaying = false;
 
 /* ------------------------------------------------------------ Python (Pyodide) */
 function loadScript(src) {
@@ -74,8 +78,7 @@ function startPython() {
       py.FS.writeFile(cwd + "/" + name, text);
       if (DATA.seabornNames.includes(name)) py.FS.writeFile(cwd + "/seaborn-data/" + name, text);
     }
-    const runner = await (await fetch("runner.py")).text();
-    py.runPython(runner);
+    for (const f of ["runner.py", "checker.py"]) py.runPython(await (await fetch(f)).text());
     setPyStatus("ready", "");
   })().catch((e) => {
     pyPromise = null;
@@ -85,13 +88,21 @@ function startPython() {
   return pyPromise;
 }
 let queue = Promise.resolve();
-function runCode(code) {
+/** Exécute une cellule ; si `check` est fourni, vérifie ensuite la réponse (même tâche : pas d'interférence). */
+function runCode(code, check) {
   const job = queue.then(async () => {
     await startPython();
     await new Promise((r) => setTimeout(r, 25)); // laisse l'interface se redessiner
     const t0 = performance.now();
-    const res = JSON.parse(py.globals.get("run_cell")(code));
+    const res = JSON.parse(await py.globals.get("run_cell")(code));
     res.ms = performance.now() - t0;
+    if (check) {
+      try {
+        res.verdict = JSON.parse(await py.globals.get("check_cell")(check.owner, check.setup, check.sols, check.alts, check.j, check.strict));
+      } catch (e) {
+        res.verdict = { status: "unchecked", msg: "Vérification indisponible : " + (e.message || e) };
+      }
+    }
     return res;
   });
   queue = job.catch(() => {});
@@ -99,7 +110,7 @@ function runCode(code) {
 }
 async function resetKernel() {
   await startPython();
-  py.globals.get("reset")();
+  await py.globals.get("reset")();
   kernelOwner = null;
 }
 
@@ -115,8 +126,8 @@ function renderResult(out, res) {
 }
 
 /**
- * Crée une cellule de code façon Jupyter.
- * o = { key, ctx:{lesson, exTitle, q}, q (html), starter, hint, solution, tag, beforeRun, trackDone, onProgress, onDelete }
+ * Cellule de code façon Jupyter.
+ * o = { key, ctx, q, starter, hint, solution, tag, check, beforeRun, trackDone, onProgress, onSolved, onDelete }
  */
 function cellView(o) {
   const root = el("div", { class: "cell" });
@@ -124,14 +135,21 @@ function cellView(o) {
   ta.value = store.get("code:" + o.key, o.starter);
   const prompt = el("div", { class: "prompt" }, "[ ]");
   const out = el("div", { class: "out" });
+  const verdict = el("div", { class: "verdict", hidden: true, role: "status" });
   const runBtn = el("button", { class: "btn small primary" }, "▶ Exécuter");
+  let tries = 0, chk = null;
 
   const autosize = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + 2 + "px"; };
-  const ctx = () => ({ ...o.ctx, ta, out });
   const activate = () => {
     if (activeCell?.root) activeCell.root.classList.remove("active");
-    activeCell = { ...ctx(), root };
+    activeCell = { ...o.ctx, ta, out, root };
     root.classList.add("active");
+  };
+  const isDone = () => !!store.get("done:" + o.key, false);
+  const setDone = (v) => {
+    store.set("done:" + o.key, v);
+    root.classList.toggle("done", v);
+    if (chk) chk.checked = v;
   };
 
   let saveTimer;
@@ -144,32 +162,76 @@ function cellView(o) {
   ta.addEventListener("keydown", (ev) => {
     if (ev.key === "Tab") {
       ev.preventDefault();
-      const s = ta.selectionStart, e2 = ta.selectionEnd;
-      ta.setRangeText("    ", s, e2, "end");
+      ta.setRangeText("    ", ta.selectionStart, ta.selectionEnd, "end");
       ta.dispatchEvent(new Event("input"));
     } else if (ev.key === "Enter" && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) {
       ev.preventDefault(); run();
     }
   });
 
+  function showVerdict(kind, title, detail, extra) {
+    verdict.hidden = false;
+    verdict.className = "verdict " + kind;
+    verdict.replaceChildren(el("div", { class: "v-title" }, title));
+    if (detail) verdict.append(el("div", { class: "v-detail" }, detail));
+    if (extra) verdict.append(el("div", { class: "v-extra" }, extra));
+  }
+
+  /** Affiche le verdict d'une cellule d'exercice et valide / fait avancer si c'est correct. */
+  function handleVerdict(res) {
+    if (res.error) {
+      tries += 1;
+      showVerdict("error", "⚠️ Il y a une erreur dans ton code", res.friendly, tries >= 3 ? helpLine() : "Lis le message rouge ci-dessous : la dernière ligne dit quel est le problème.");
+      return "error";
+    }
+    const v = res.verdict;
+    if (!v) return null;
+    if (v.status === "ok") {
+      const wasDone = isDone();
+      tries = 0;
+      showVerdict("ok", wasDone ? "✅ Correct (déjà validé)" : "✅ Correct ! Question validée", v.note ? "⚠️ " + v.note : null);
+      if (!wasDone) { setDone(true); o.onProgress?.(); o.onSolved?.(); }
+      return "ok";
+    }
+    if (v.status === "wrong") {
+      tries += 1;
+      showVerdict("wrong", "❌ Pas encore ça", v.msg, tries >= 3 ? helpLine() : "Relis la consigne, ou ouvre l'indice 💡, puis modifie ton code et ré-exécute.");
+      return "wrong";
+    }
+    if (v.status === "empty") { showVerdict("info", "✍️ Cellule vide", v.msg); return "empty"; }
+    if (v.status === "error") {
+      tries += 1;
+      showVerdict("error", "⚠️ Il y a une erreur dans ton code", v.msg, tries >= 3 ? helpLine() : null);
+      return "error";
+    }
+    showVerdict("info", "ℹ️ Vérification automatique", v.msg);
+    return "unchecked";
+  }
+  const helpLine = () => "Bloqué ? Ouvre l'indice 💡, regarde la solution ✅, ou clique sur « Discuter avec Claude » : ton code et ce résultat sont envoyés automatiquement.";
+
   async function run() {
     activate();
     runBtn.disabled = true;
     prompt.textContent = "[*]";
+    verdict.hidden = true;
     out.replaceChildren(el("div", { class: "exec-meta" }, "Exécution… (au premier lancement, Python se charge)"));
+    let status = null;
     try {
       if (o.beforeRun) await o.beforeRun();
       activate(); // la préparation automatique a pu activer une autre cellule
-      const res = await runCode(ta.value);
+      const res = await runCode(ta.value, o.check);
       execCount += 1;
       prompt.textContent = `[${execCount}]`;
       renderResult(out, res);
+      if (o.check) status = handleVerdict(res);
+      else if (res.error) showVerdict("error", "⚠️ Il y a une erreur dans ton code", res.friendly);
     } catch (e) {
       prompt.textContent = "[!]";
       out.replaceChildren(el("pre", { class: "err" }, "Erreur : " + (e.message || e)));
     } finally {
       runBtn.disabled = false;
     }
+    return status;
   }
   runBtn.addEventListener("click", run);
 
@@ -195,22 +257,18 @@ function cellView(o) {
   tools.append(el("button", { class: "btn small", title: "Remettre le code de départ", onclick: () => { ta.value = o.starter; ta.dispatchEvent(new Event("input")); store.set("code:" + o.key, o.starter); } }, "↺"));
   tools.append(el("span", { class: "spacer" }));
   if (o.trackDone) {
-    const chk = el("input", { type: "checkbox" });
-    chk.checked = !!store.get("done:" + o.key, false);
+    chk = el("input", { type: "checkbox" });
+    chk.checked = isDone();
     root.classList.toggle("done", chk.checked);
-    chk.addEventListener("change", () => {
-      store.set("done:" + o.key, chk.checked);
-      root.classList.toggle("done", chk.checked);
-      o.onProgress?.();
-    });
-    tools.append(el("label", {}, chk, "Fait"));
+    chk.addEventListener("change", () => { setDone(chk.checked); o.onProgress?.(); });
+    tools.append(el("label", {}, chk, "Validé"));
   }
   if (o.onDelete) tools.append(el("button", { class: "btn small", onclick: o.onDelete }, "🗑"));
 
   if (o.q) root.append(el("div", { class: "q" }, el("span", { class: "tag" }, o.tag || "Question"), el("span", { html: o.q })));
-  root.append(el("div", { class: "row" }, prompt, ta), tools, out);
+  root.append(el("div", { class: "row" }, prompt, ta), tools, verdict, out);
   requestAnimationFrame(autosize);
-  return { root, run, ta, out };
+  return { root, run, ta, out, isDone };
 }
 
 /* noyau : réinitialise l'espace de noms quand on change d'exercice */
@@ -240,16 +298,17 @@ function renderHome() {
   DATA.lessons.forEach((l) => { const p = lessonProgress(l); T += p.total; D += p.done; });
   const hero = el("div", { class: "hero" },
     el("h2", {}, "Le cycle de vie du machine learning, pas à pas"),
-    el("p", { class: "muted" }, "Lis la règle, écris le code, regarde le résultat. " + D + " / " + T + " exercices terminés."),
+    el("p", { class: "muted" }, `Lis la règle, écris le code, exécute : l'app te dit si c'est juste. ${D} / ${T} questions validées.`),
     el("div", { class: "global-progress" }, el("i", { style: `width:${T ? (100 * D) / T : 0}%` })));
   const cards = el("div", { class: "cards" });
   DATA.lessons.forEach((l) => {
     const p = lessonProgress(l);
-    cards.append(el("button", { class: "card", onclick: () => renderLesson(l) },
-      el("div", { class: "emoji" }, l.emoji),
+    const complete = p.total > 0 && p.done === p.total;
+    cards.append(el("button", { class: "card" + (complete ? " complete" : ""), onclick: () => renderLesson(l) },
+      el("div", { class: "emoji" }, complete ? "✅" : l.emoji),
       el("div", { class: "meta" },
         el("div", { class: "name" }, `${l.id}. ${l.title}`),
-        el("div", { class: "sub" }, `${l.exercises.length} exercices · ${p.done}/${p.total} cellules faites`),
+        el("div", { class: "sub" }, `${l.exercises.length} exercices · ${p.done}/${p.total} questions validées`),
         el("div", { class: "bar" }, el("i", { style: `width:${p.total ? (100 * p.done) / p.total : 0}%` })))));
   });
   cards.append(el("button", { class: "card", onclick: renderSandbox },
@@ -278,6 +337,43 @@ function renderLesson(lesson) {
   $("#chatFab").hidden = false;
   const v = view();
   v.replaceChildren();
+
+  /* progression de la leçon + revalidation */
+  const progLabel = el("span", {});
+  const progBar = el("i", {});
+  const exos = []; // { details, upd, replay, cells, count }
+  const footer = el("div", { class: "panel lesson-done", hidden: true });
+  const updProg = () => {
+    const p = lessonProgress(lesson);
+    progLabel.textContent = `${p.done} / ${p.total} questions validées`;
+    progBar.style.width = (p.total ? (100 * p.done) / p.total : 0) + "%";
+    const complete = p.total > 0 && p.done === p.total;
+    footer.hidden = !complete;
+    if (complete) {
+      const idx = DATA.lessons.indexOf(lesson), next = DATA.lessons[idx + 1];
+      footer.replaceChildren(el("h3", {}, "🎉 Leçon terminée !"),
+        el("p", {}, "Toutes les questions de cette leçon sont validées."),
+        next ? el("button", { class: "btn primary", onclick: () => renderLesson(next) }, `Leçon suivante : ${next.title} →`)
+          : el("button", { class: "btn primary", onclick: renderHome }, "Retour à l'accueil"));
+    }
+  };
+  const revalidate = async () => {
+    if (replaying) return;
+    replaying = true;
+    const before = lessonProgress(lesson).done;
+    revalBtn.disabled = true;
+    try {
+      for (const x of exos) await x.replay();
+    } finally { replaying = false; revalBtn.disabled = false; }
+    exos.forEach((x) => x.upd()); updProg();
+    const after = lessonProgress(lesson);
+    toast(`Revalidation terminée : ${after.done}/${after.total} questions validées` + (after.done > before ? ` (+${after.done - before})` : ""));
+  };
+  const revalBtn = el("button", { class: "btn small", title: "Ré-exécute tout le code que tu as déjà écrit dans cette leçon et valide ce qui est juste", onclick: revalidate }, "🔄 Revalider tout mon code");
+  v.append(el("div", { class: "lesson-progress" },
+    el("div", { class: "lp-row" }, progLabel, revalBtn),
+    el("div", { class: "global-progress" }, progBar)));
+
   v.append(el("div", { class: "panel" }, el("h3", {}, "La règle"), el("div", { html: lesson.rule })));
 
   const ex0 = cellView({
@@ -291,7 +387,17 @@ function renderLesson(lesson) {
     const owner = `ex:${lesson.id}:${i}`;
     const body = el("div", { class: "exo-body" });
     const count = el("span", { class: "count" });
-    const upd = () => { count.textContent = `${ex.cells.filter((_, j) => store.get(`done:${lesson.id}:${i}:${j}`, false)).length}/${ex.cells.length}`; };
+    const banner = el("div", { class: "exo-done", hidden: true }, "🎉 Exercice terminé !");
+    const sols = JSON.stringify(ex.cells.map((c) => c.solution));
+    const alts = JSON.stringify(ex.cells.map((c) => c.alts || []));
+    const strict = JSON.stringify(ex.cells.map((c) => !!c.strict));
+    let cells = [];
+    const upd = () => {
+      const n = cells.filter((c) => c.isDone()).length;
+      count.textContent = `${n}/${ex.cells.length}`;
+      banner.hidden = n !== ex.cells.length;
+      d.classList.toggle("finished", n === ex.cells.length);
+    };
     if (ex.intro) body.append(el("p", { html: ex.intro }));
 
     const setup = cellView({
@@ -301,19 +407,49 @@ function renderLesson(lesson) {
     });
     // la préparation redémarre toujours le noyau pour cet exercice
     const setupRun = async () => { kernelOwner = null; await setup.run(); };
-    const cells = ex.cells.map((c, j) => cellView({
+
+    /* après une bonne réponse : on avance vers la question suivante */
+    const onSolved = (j) => {
+      upd(); updProg();
+      if (replaying) return;
+      const next = cells.slice(j + 1).find((c) => !c.isDone());
+      if (next) { setTimeout(() => next.root.scrollIntoView({ behavior: "smooth", block: "center" }), 650); return; }
+      if (cells.every((c) => c.isDone())) {
+        const nextExo = exos[i + 1];
+        toast("🎉 Exercice terminé !");
+        if (nextExo) setTimeout(() => { nextExo.details.open = true; nextExo.details.scrollIntoView({ behavior: "smooth", block: "start" }); }, 900);
+        else setTimeout(() => footer.scrollIntoView({ behavior: "smooth", block: "center" }), 900);
+      }
+    };
+    cells = ex.cells.map((c, j) => cellView({
       key: `${lesson.id}:${i}:${j}`, tag: `Question ${j + 1}`, q: c.q, starter: c.starter, hint: c.hint, solution: c.solution,
-      ctx: { lesson, exTitle: ex.title, q: htmlToText(c.q) }, trackDone: true, onProgress: upd,
+      ctx: { lesson, exTitle: ex.title, q: htmlToText(c.q) }, trackDone: true,
+      onProgress: () => { upd(); updProg(); },
+      onSolved: () => onSolved(j),
+      check: { owner, setup: ex.setup, sols, alts, strict, j },
       beforeRun: async () => { if (kernelOwner !== owner) await setupRun(); },
     }));
+    const replay = async () => {
+      await setupRun();
+      for (const c of cells) if (!isBlankCode(c.ta.value)) await c.run();
+    };
     body.append(el("div", { class: "exo-actions" },
-      el("button", { class: "btn small", onclick: async () => { await setupRun(); for (const c of cells) if (c.ta.value.replace(/#.*$/gm, "").trim()) await c.run(); } }, "⏩ Tout rejouer")));
-    body.append(setup.root, ...cells.map((c) => c.root));
+      el("button", { class: "btn small", title: "Ré-exécute la préparation puis toutes tes cellules dans l'ordre", onclick: async () => {
+        replaying = true;
+        try { await replay(); } finally { replaying = false; }
+        upd(); updProg();
+      } }, "⏩ Tout rejouer et vérifier")));
+    body.append(banner, setup.root, ...cells.map((c) => c.root));
     const d = el("details", { class: "exo" }, el("summary", {}, `Exercice ${i + 1} · ${ex.title}`, count), body);
-    if (i === 0) d.open = true;
+    exos.push({ details: d, upd, replay });
     upd();
     v.append(d);
   });
+  // premier exercice non terminé ouvert
+  const firstOpen = exos.find((x) => x.details.querySelector(".count").textContent.split("/")[0] !== x.details.querySelector(".count").textContent.split("/")[1]) || exos[0];
+  firstOpen.details.open = true;
+  v.append(footer);
+  updProg();
   window.scrollTo(0, 0);
 }
 
@@ -346,11 +482,17 @@ function renderSandbox() {
   window.scrollTo(0, 0);
 }
 
-/* ------------------------------------------------------------ discussion avec Claude */
+/* ------------------------------------------------------------ discussion avec Claude (conversation « Request ») */
+function getChatUrl() {
+  const local = store.get("chatUrl", "");
+  if (local && CHAT_URL_RE.test(local)) return local;
+  return DATA?.claudeChatUrl && CHAT_URL_RE.test(DATA.claudeChatUrl) ? DATA.claudeChatUrl : "";
+}
+
 function buildPrompt(question, guided) {
   const c = activeCell;
   const lesson = c?.lesson || currentLesson;
-  const parts = ["Je m'entraîne au workflow de préparation des données pour le machine learning (pandas, seaborn, scikit-learn) avec une app d'exercices."];
+  const parts = ["[ML Lab] Je m'entraîne au workflow de préparation des données pour le machine learning (pandas, seaborn, scikit-learn) avec mon app d'exercices."];
   if (lesson) {
     parts.push(`\nLeçon : ${lesson.title}`);
     if (lesson.rule && lesson.id !== "sandbox") parts.push(`Règle de la leçon : ${clip(htmlToText(lesson.rule), 500)}`);
@@ -361,7 +503,9 @@ function buildPrompt(question, guided) {
     parts.push(`Exercice : ${c.exTitle}`);
     parts.push(`Question : ${c.q}`);
     parts.push("\nMon code :\n```python\n" + clip(c.ta.value.trim(), 1500) + "\n```");
-    const outText = (c.out.innerText || "").replace(/^exécuté en .*\n?/i, "").replace(/^Exécution….*$/m, "").trim();
+    const verdictText = textOf(c.root?.querySelector(".verdict:not([hidden])")).trim();
+    if (verdictText) parts.push("Verdict de l'app : " + clip(verdictText.replace(/\s+/g, " "), 400));
+    const outText = textOf(c.out).replace(/^exécuté en .*\n?/i, "").replace(/^Exécution….*$/m, "").trim();
     parts.push("Résultat affiché dans l'app :\n```\n" + (outText ? clip(outText, 1200) : "(pas encore exécuté)") + "\n```");
   }
   parts.push("\nMa question : " + (question.trim() || "Peux-tu vérifier mon code et m'expliquer ce que je dois comprendre ici ?"));
@@ -379,31 +523,61 @@ async function copyText(text) {
 
 function openChatSheet() {
   const sheet = $("#sheet");
+  const close = () => { sheet.hidden = true; sheet.replaceChildren(); };
   const q = el("textarea", { placeholder: "Pose ta question sur ce que tu vois à l'écran (laisse vide pour demander une vérification)…" });
   const guided = el("input", { type: "checkbox" }); guided.checked = true;
   const preview = el("textarea", { class: "preview", readonly: true });
   const refresh = () => { preview.value = buildPrompt(q.value, guided.checked); };
   q.addEventListener("input", refresh); guided.addEventListener("change", refresh); refresh();
   const where = activeCell ? `${activeCell.lesson?.title || ""} › ${activeCell.exTitle} › ${activeCell.q}` : (currentLesson ? currentLesson.title : "Accueil");
+
+  /* destination : la conversation « Request » */
+  const dest = el("div", { class: "dest" });
+  const drawDest = (editing) => {
+    const url = getChatUrl();
+    dest.replaceChildren();
+    if (url && !editing) {
+      dest.append(el("div", {}, "📨 Envoi vers ta conversation « Request »"),
+        el("button", { class: "btn small", onclick: () => drawDest(true) }, "Changer le lien"));
+    } else {
+      const inp = el("input", { type: "url", placeholder: "https://claude.ai/chat/…  (lien de la conversation Request)", value: url || "" });
+      const msg = el("div", { class: "muted", style: "font-size:12px" }, "Ouvre ta conversation « Request » dans Claude, copie son adresse, colle-la ici une seule fois.");
+      dest.append(el("div", {}, "📨 Conversation « Request »"), inp, msg,
+        el("button", { class: "btn small primary", onclick: () => {
+          const val = inp.value.trim();
+          if (!CHAT_URL_RE.test(val)) { msg.textContent = "Ce lien n'est pas valide : il doit ressembler à https://claude.ai/chat/xxxxxxxx-…"; msg.style.color = "var(--err)"; return; }
+          store.set("chatUrl", val); toast("Lien enregistré sur cet appareil"); drawDest(false);
+        } }, "Enregistrer le lien"));
+    }
+  };
+  drawDest(false);
+
   const open = async () => {
     const text = buildPrompt(q.value, guided.checked);
     const copied = await copyText(text);
-    const url = "https://claude.ai/new?q=" + encodeURIComponent(text);
-    window.open(url.length <= 6000 ? url : "https://claude.ai/new", "_blank", "noopener");
-    toast(copied ? "Contexte copié. Colle-le dans Claude s'il n'apparaît pas." : "Copie le texte ci-dessous puis colle-le dans Claude.");
+    const chat = getChatUrl();
+    if (chat) {
+      window.open(chat, "_blank", "noopener");
+      toast(copied ? "Message copié : colle-le dans « Request »." : "Copie le texte ci-dessous puis colle-le dans « Request ».");
+    } else {
+      const url = "https://claude.ai/new?q=" + encodeURIComponent(text);
+      window.open(url.length <= 6000 ? url : "https://claude.ai/new", "_blank", "noopener");
+      toast("Lien « Request » non enregistré : nouvelle conversation ouverte. Enregistre le lien ci-dessus pour tout regrouper.");
+    }
   };
   sheet.replaceChildren(el("div", { class: "sheet-card" },
     el("h3", {}, "💬 Discuter avec Claude"),
-    el("div", { class: "ctx" }, "Contexte envoyé : ", where, ". Ton code et son résultat sont inclus."),
+    el("div", { class: "ctx" }, "Contexte envoyé : ", where, ". Ton code, le verdict et le résultat sont inclus."),
+    dest,
     q,
     el("label", { class: "chk" }, guided, "Guide-moi sans me donner la solution directement"),
     el("details", {}, el("summary", { class: "muted" }, "Voir le message complet"), preview),
     el("div", { class: "btns" },
-      el("button", { class: "btn primary", onclick: open }, "Copier et ouvrir Claude"),
+      el("button", { class: "btn primary", onclick: open }, "Copier et ouvrir « Request »"),
       el("button", { class: "btn", onclick: async () => toast((await copyText(preview.value)) ? "Message copié" : "Copie impossible") }, "Copier seulement"),
-      el("button", { class: "btn", onclick: () => { sheet.hidden = true; sheet.replaceChildren(); } }, "Fermer"))));
+      el("button", { class: "btn", onclick: close }, "Fermer"))));
   sheet.hidden = false;
-  sheet.onclick = (e) => { if (e.target === sheet) { sheet.hidden = true; sheet.replaceChildren(); } };
+  sheet.onclick = (e) => { if (e.target === sheet) close(); };
 }
 
 /* ------------------------------------------------------------ démarrage / verrouillage */

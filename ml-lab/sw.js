@@ -1,8 +1,8 @@
 // Service worker : permet l'utilisation hors-ligne après le premier chargement.
-const SHELL = "ml-lab-shell-v1";
+const SHELL = "ml-lab-shell-v2";
 const CDN = "ml-lab-cdn-v1";
 const SHELL_FILES = [
-  "./", "index.html", "style.css", "app.js", "crypto.js", "runner.py", "content.enc",
+  "./", "index.html", "style.css", "app.js", "crypto.js", "runner.py", "checker.py", "content.enc",
   "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png",
   "wheels/seaborn-0.13.2-py3-none-any.whl",
 ];
