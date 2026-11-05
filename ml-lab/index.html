@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161a">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ML Lab">
+  <title>ML Lab</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Écran de verrouillage : le contenu des leçons est chiffré, il n'est lisible qu'avec le mot de passe -->
+  <main id="lock" class="lock">
+    <form id="lockForm" class="lock-card" autocomplete="off">
+      <div class="logo">ML</div>
+      <h1>ML Lab</h1>
+      <p class="muted">Contenu chiffré. Entre le mot de passe pour déverrouiller.</p>
+      <input id="pw" type="password" placeholder="Mot de passe" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+      <button id="unlockBtn" type="submit" class="btn primary">Déverrouiller</button>
+      <p id="lockMsg" class="lock-msg" role="alert"></p>
+    </form>
+  </main>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <button id="backBtn" class="icon-btn" aria-label="Retour" hidden>←</button>
+      <div class="title" id="topTitle">ML Lab</div>
+      <span id="pyStatus" class="py-status loading" title="État de Python">⏳</span>
+      <button id="lockBtn" class="icon-btn" aria-label="Verrouiller">🔒</button>
+    </header>
+    <div id="pyBanner" class="py-banner" hidden></div>
+    <main id="view" class="view"></main>
+  </div>
+
+  <button id="chatFab" class="fab" hidden>💬 Discuter avec Claude</button>
+  <div id="sheet" class="sheet" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
