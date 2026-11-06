@@ -2,7 +2,8 @@ import { decryptPayload } from "./crypto.js";
 
 const PYODIDE_BASE = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 const SEABORN_WHEEL = "wheels/seaborn-0.13.2-py3-none-any.whl";
-const CHAT_URL_RE = /^https:\/\/claude\.ai\/chat\/[0-9a-fA-F-]{20,}([/?#].*)?$/;
+const CHAT_URL_RE = /^https:\/\/claude\.ai\/(chat|share)\/[0-9a-fA-F-]{20,}([/?#].*)?$/;
+const isShareUrl = (u) => /^https:\/\/claude\.ai\/share\//.test(u);
 
 /* ------------------------------------------------------------ utilitaires */
 const $ = (s, r = document) => r.querySelector(s);
@@ -98,7 +99,7 @@ function runCode(code, check) {
     res.ms = performance.now() - t0;
     if (check) {
       try {
-        res.verdict = JSON.parse(await py.globals.get("check_cell")(check.owner, check.setup, check.sols, check.alts, check.j, check.strict));
+        res.verdict = JSON.parse(await py.globals.get("check_cell")(check.owner, check.setup, check.sols, check.alts, check.j, check.strict, check.tests));
       } catch (e) {
         res.verdict = { status: "unchecked", msg: "Vérification indisponible : " + (e.message || e) };
       }
@@ -284,37 +285,74 @@ function setTop(title, back) {
   $("#topTitle").textContent = title;
   $("#backBtn").hidden = !back;
 }
+const spaceOf = (l) => l.space || "ml";
+const SPACES = [
+  { id: "ml", emoji: "🧪", name: "Workflow ML", title: "Le cycle de vie du machine learning, pas à pas",
+    sub: "Exploration, nettoyage, préparation : le workflow avant l'entraînement." },
+  { id: "py", emoji: "🐍", name: "Python & librairies", title: "Maîtriser Python, NumPy, Pandas et Matplotlib",
+    sub: "Les bases du langage et des librairies de traitement de données, avec beaucoup de pratique." },
+];
+const GROUP_INFO = {
+  Python: "Les bases du langage", NumPy: "Calcul sur tableaux", Pandas: "Manipuler des tableaux de données",
+  Matplotlib: "Tracer des graphiques", Seaborn: "Graphiques statistiques",
+};
 function lessonProgress(lesson) {
   let total = 0, done = 0;
   lesson.exercises.forEach((ex, i) => ex.cells.forEach((_, j) => { total++; if (store.get(`done:${lesson.id}:${i}:${j}`, false)) done++; }));
   return { total, done };
 }
 
-function renderHome() {
+function renderHome(spaceId) {
   currentLesson = null; activeCell = null;
   setTop("ML Lab", false);
   $("#chatFab").hidden = false;
-  let T = 0, D = 0;
-  DATA.lessons.forEach((l) => { const p = lessonProgress(l); T += p.total; D += p.done; });
+  const sid = spaceId || store.get("space", "ml");
+  const space = SPACES.find((x) => x.id === sid) || SPACES[0];
+  store.set("space", space.id);
+  const lessons = DATA.lessons.filter((l) => spaceOf(l) === space.id);
+  const stat = (list) => list.reduce((a, l) => { const p = lessonProgress(l); return { T: a.T + p.total, D: a.D + p.done }; }, { T: 0, D: 0 });
+
+  const tabs = el("div", { class: "tabs", role: "tablist" });
+  SPACES.forEach((sp) => {
+    const st = stat(DATA.lessons.filter((l) => spaceOf(l) === sp.id));
+    tabs.append(el("button", { class: "tab" + (sp.id === space.id ? " on" : ""), role: "tab", "aria-selected": sp.id === space.id ? "true" : "false",
+      onclick: () => renderHome(sp.id) },
+      el("span", { class: "t-emoji" }, sp.emoji), el("span", { class: "t-name" }, sp.name),
+      el("span", { class: "t-count" }, `${st.D}/${st.T}`)));
+  });
+
+  const { T, D } = stat(lessons);
   const hero = el("div", { class: "hero" },
-    el("h2", {}, "Le cycle de vie du machine learning, pas à pas"),
-    el("p", { class: "muted" }, `Lis la règle, écris le code, exécute : l'app te dit si c'est juste. ${D} / ${T} questions validées.`),
+    el("h2", {}, space.title),
+    el("p", { class: "muted" }, `${space.sub} Lis la règle, écris le code, exécute : l'app te dit si c'est juste. ${D} / ${T} questions validées.`),
     el("div", { class: "global-progress" }, el("i", { style: `width:${T ? (100 * D) / T : 0}%` })));
-  const cards = el("div", { class: "cards" });
-  DATA.lessons.forEach((l) => {
+
+  const card = (l) => {
     const p = lessonProgress(l);
     const complete = p.total > 0 && p.done === p.total;
-    cards.append(el("button", { class: "card" + (complete ? " complete" : ""), onclick: () => renderLesson(l) },
+    return el("button", { class: "card" + (complete ? " complete" : ""), onclick: () => renderLesson(l) },
       el("div", { class: "emoji" }, complete ? "✅" : l.emoji),
       el("div", { class: "meta" },
         el("div", { class: "name" }, `${l.id}. ${l.title}`),
         el("div", { class: "sub" }, `${l.exercises.length} exercices · ${p.done}/${p.total} questions validées`),
-        el("div", { class: "bar" }, el("i", { style: `width:${p.total ? (100 * p.done) / p.total : 0}%` })))));
-  });
-  cards.append(el("button", { class: "card", onclick: renderSandbox },
+        el("div", { class: "bar" }, el("i", { style: `width:${p.total ? (100 * p.done) / p.total : 0}%` }))));
+  };
+  const list = el("div", {});
+  if (space.id === "py") {
+    const groups = [...new Set(lessons.map((l) => l.group))];
+    groups.forEach((g) => {
+      const gl = lessons.filter((l) => l.group === g);
+      const st = stat(gl);
+      list.append(el("div", { class: "group-head" }, el("h3", {}, g), el("span", { class: "muted" }, `${GROUP_INFO[g] || ""} · ${st.D}/${st.T}`)));
+      list.append(el("div", { class: "cards" }, gl.map(card)));
+    });
+  } else {
+    list.append(el("div", { class: "cards" }, lessons.map(card)));
+  }
+  const sandbox = el("div", { class: "cards" }, el("button", { class: "card", onclick: renderSandbox },
     el("div", { class: "emoji" }, "🧰"),
     el("div", { class: "meta" }, el("div", { class: "name" }, "Bac à sable"), el("div", { class: "sub" }, "Code libre sur tous les datasets, autant de cellules que tu veux"))));
-  view().replaceChildren(hero, installCard(), cards);
+  view().replaceChildren(tabs, hero, installCard(), list, sandbox);
   window.scrollTo(0, 0);
 }
 
@@ -350,11 +388,12 @@ function renderLesson(lesson) {
     const complete = p.total > 0 && p.done === p.total;
     footer.hidden = !complete;
     if (complete) {
-      const idx = DATA.lessons.indexOf(lesson), next = DATA.lessons[idx + 1];
+      const sameSpace = DATA.lessons.filter((l) => spaceOf(l) === spaceOf(lesson));
+      const next = sameSpace[sameSpace.indexOf(lesson) + 1];
       footer.replaceChildren(el("h3", {}, "🎉 Leçon terminée !"),
         el("p", {}, "Toutes les questions de cette leçon sont validées."),
         next ? el("button", { class: "btn primary", onclick: () => renderLesson(next) }, `Leçon suivante : ${next.title} →`)
-          : el("button", { class: "btn primary", onclick: renderHome }, "Retour à l'accueil"));
+          : el("button", { class: "btn primary", onclick: () => renderHome(spaceOf(lesson)) }, "Retour à l'accueil"));
     }
   };
   const revalidate = async () => {
@@ -391,6 +430,7 @@ function renderLesson(lesson) {
     const sols = JSON.stringify(ex.cells.map((c) => c.solution));
     const alts = JSON.stringify(ex.cells.map((c) => c.alts || []));
     const strict = JSON.stringify(ex.cells.map((c) => !!c.strict));
+    const tests = JSON.stringify(ex.cells.map((c) => c.tests || []));
     let cells = [];
     const upd = () => {
       const n = cells.filter((c) => c.isDone()).length;
@@ -426,7 +466,7 @@ function renderLesson(lesson) {
       ctx: { lesson, exTitle: ex.title, q: htmlToText(c.q) }, trackDone: true,
       onProgress: () => { upd(); updProg(); },
       onSolved: () => onSolved(j),
-      check: { owner, setup: ex.setup, sols, alts, strict, j },
+      check: { owner, setup: ex.setup, sols, alts, strict, tests, j },
       beforeRun: async () => { if (kernelOwner !== owner) await setupRun(); },
     }));
     const replay = async () => {
@@ -492,7 +532,10 @@ function getChatUrl() {
 function buildPrompt(question, guided) {
   const c = activeCell;
   const lesson = c?.lesson || currentLesson;
-  const parts = ["[ML Lab] Je m'entraîne au workflow de préparation des données pour le machine learning (pandas, seaborn, scikit-learn) avec mon app d'exercices."];
+  const sp = (c?.lesson || currentLesson)?.space;
+  const parts = [sp === "py"
+    ? "[ML Lab] J'apprends Python pour la data science et le machine learning (NumPy, Pandas, Matplotlib, Seaborn) avec mon app d'exercices."
+    : "[ML Lab] Je m'entraîne au workflow de préparation des données pour le machine learning (pandas, seaborn, scikit-learn) avec mon app d'exercices."];
   if (lesson) {
     parts.push(`\nLeçon : ${lesson.title}`);
     if (lesson.rule && lesson.id !== "sandbox") parts.push(`Règle de la leçon : ${clip(htmlToText(lesson.rule), 500)}`);
@@ -538,14 +581,15 @@ function openChatSheet() {
     dest.replaceChildren();
     if (url && !editing) {
       dest.append(el("div", {}, "📨 Envoi vers ta conversation « Request »"),
+        isShareUrl(url) ? el("div", { class: "muted", style: "font-size:12px" }, "ℹ️ C'est un lien de partage : il ouvre une copie en lecture de la conversation. Pour écrire dans la conversation d'origine, remplace-le par son adresse https://claude.ai/chat/… (ouvre-la dans ton compte et copie l'adresse).") : null,
         el("button", { class: "btn small", onclick: () => drawDest(true) }, "Changer le lien"));
     } else {
-      const inp = el("input", { type: "url", placeholder: "https://claude.ai/chat/…  (lien de la conversation Request)", value: url || "" });
+      const inp = el("input", { type: "url", placeholder: "https://claude.ai/chat/…  ou  https://claude.ai/share/…", value: url || "" });
       const msg = el("div", { class: "muted", style: "font-size:12px" }, "Ouvre ta conversation « Request » dans Claude, copie son adresse, colle-la ici une seule fois.");
       dest.append(el("div", {}, "📨 Conversation « Request »"), inp, msg,
         el("button", { class: "btn small primary", onclick: () => {
           const val = inp.value.trim();
-          if (!CHAT_URL_RE.test(val)) { msg.textContent = "Ce lien n'est pas valide : il doit ressembler à https://claude.ai/chat/xxxxxxxx-…"; msg.style.color = "var(--err)"; return; }
+          if (!CHAT_URL_RE.test(val)) { msg.textContent = "Ce lien n'est pas valide : il doit ressembler à https://claude.ai/chat/xxxxxxxx-… ou https://claude.ai/share/xxxxxxxx-…"; msg.style.color = "var(--err)"; return; }
           store.set("chatUrl", val); toast("Lien enregistré sur cet appareil"); drawDest(false);
         } }, "Enregistrer le lien"));
     }
@@ -603,6 +647,6 @@ async function onUnlock(ev) {
 window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredInstall = e; if (DATA && !currentLesson) renderHome(); });
 $("#lockForm").addEventListener("submit", onUnlock);
 $("#lockBtn").addEventListener("click", () => location.reload());
-$("#backBtn").addEventListener("click", renderHome);
+$("#backBtn").addEventListener("click", () => renderHome(currentLesson && currentLesson.space ? currentLesson.space : undefined));
 $("#chatFab").addEventListener("click", openChatSheet);
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

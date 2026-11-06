@@ -61,11 +61,25 @@ def _result_to_out(val, out):
 
 
 def _fig_sig(fig):
-    """Signature simple d'un graphique : nombre d'axes, types d'éléments, libellés d'axes."""
-    sig = {"axes": 0, "lines": 0, "patches": 0, "collections": 0, "texts": 0, "images": 0, "labels": []}
-    labels = set()
+    """Signature d'un graphique : structure (axes, éléments, titres, légende) ET données tracées."""
+    import numpy as np
+
+    def _num(v):
+        try:
+            a = np.asarray(v, dtype=float)
+            return a if a.size else None
+        except Exception:
+            return None
+
+    sig = {"axes": 0, "lines": 0, "patches": 0, "collections": 0, "texts": 0, "images": 0,
+           "labels": [], "titles": [], "legend": False, "xy": [], "heights": [], "widths": [],
+           "points": [], "mesh": [], "markers": 0, "per_ax": [],
+           "size": tuple(float(x) for x in fig.get_size_inches())}
+    labels, titles = set(), []
     for ax in fig.get_axes():
         sig["axes"] += 1
+        pa = {"title": ax.get_title().strip().lower(), "bars": [], "pts": [], "lines": []}
+        sig["per_ax"].append(pa)
         sig["lines"] += len(ax.lines)
         sig["patches"] += len(ax.patches)
         sig["collections"] += len(ax.collections)
@@ -73,8 +87,46 @@ def _fig_sig(fig):
         sig["images"] += len(ax.images)
         for lab in (ax.get_xlabel(), ax.get_ylabel()):
             if lab:
-                labels.add(lab)
+                labels.add(lab.strip().lower())
+        t = ax.get_title()
+        if t:
+            titles.append(t.strip().lower())
+        if ax.get_legend() is not None:
+            sig["legend"] = True
+        for ln in ax.lines:
+            y = _num(ln.get_ydata())
+            if y is not None:
+                sig["xy"].append((_num(ln.get_xdata()), y))
+                pa["lines"].append(y)
+            if ln.get_marker() not in (None, "None", "", " ") and ln.get_visible():
+                sig["markers"] += 1
+        for pt in ax.patches:
+            try:
+                sig["heights"].append(float(pt.get_height()))
+                sig["widths"].append(float(pt.get_width()))
+                pa["bars"].append((round(float(pt.get_x()), 6), round(float(pt.get_y()), 6),
+                                   float(pt.get_width()), float(pt.get_height())))
+            except Exception:
+                pass
+        for c in ax.collections:
+            try:
+                arr = c.get_array()
+                if arr is not None and np.size(arr) > 0 and type(c).__name__ == "QuadMesh":
+                    sig["mesh"].append(np.asarray(arr, dtype=float).ravel())
+                    continue
+            except Exception:
+                pass
+            try:
+                off = np.asarray(c.get_offsets(), dtype=float)
+                if off.ndim == 2 and off.shape[0] > 0 and not np.isnan(off).all():
+                    sig["points"].append(off)
+                    pa["pts"].append(off)
+            except Exception:
+                pass
+    for pa in sig["per_ax"]:
+        pa["bars"] = [(w, h) for _x, _y, w, h in sorted(pa["bars"])]
     sig["labels"] = sorted(labels)
+    sig["titles"] = sorted(titles)
     return sig
 
 

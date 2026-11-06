@@ -1,5 +1,5 @@
 // Service worker : permet l'utilisation hors-ligne après le premier chargement.
-const SHELL = "ml-lab-shell-v2";
+const SHELL = "ml-lab-shell-v3";
 const CDN = "ml-lab-cdn-v1";
 const SHELL_FILES = [
   "./", "index.html", "style.css", "app.js", "crypto.js", "runner.py", "checker.py", "content.enc",

@@ -4,7 +4,9 @@ Principe : la solution de chaque cellule est exécutée dans un noyau de RÉFÉR
 puis on compare ce que l'élève a obtenu (affichage, variables modifiées, graphique) avec ce que produit la solution.
 Ce fichier est exécuté dans les mêmes globals que runner.py."""
 import ast
+import contextlib
 import copy
+import io
 import json
 import re
 import types
@@ -14,7 +16,7 @@ import pandas as pd
 
 _refs = {}
 _NUM = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
-RTOL = 5e-3
+RTOL = 1e-7  # tolérance serrée : un résultat « pas arrondi » ne doit pas passer pour un résultat arrondi
 
 
 # ------------------------------------------------------------------ outils
@@ -75,9 +77,34 @@ def _nums(text):
     return [float(x) for x in _NUM.findall(text)]
 
 
-def _num_close(x, y):
+def _decimals(txt):
+    """Nombre de décimales écrites dans la représentation d'un nombre."""
+    t = str(txt).lower()
+    if "e" in t:
+        return 15
+    return len(t.split(".")[1]) if "." in t else 0
+
+
+def _num_text_ok(us, es):
+    """us (élève) et es (attendu) : nombres sous forme de texte.
+    Accepté si égaux, ou si l'élève a arrondi PLUS grossièrement que l'attendu de façon cohérente.
+    Refusé si l'élève montre plus de décimales que l'attendu sans être égal (= il n'a pas arrondi)."""
     try:
-        return bool(np.isclose(float(x), float(y), rtol=RTOL, atol=1e-8, equal_nan=True))
+        u, e = float(us), float(es)
+    except Exception:
+        return False
+    if np.isclose(u, e, rtol=RTOL, atol=1e-9, equal_nan=True):
+        return True
+    du, de = _decimals(us), _decimals(es)
+    return du < de and abs(u - e) <= 0.5 * 10 ** (-du) + 1e-9
+
+
+def _num_close(x, y):
+    """Comparaison de deux nombres Python/NumPy (même règle que _num_text_ok)."""
+    try:
+        if isinstance(x, (int, np.integer)) and isinstance(y, (int, np.integer)):
+            return int(x) == int(y)
+        return _num_text_ok(repr(float(x)), repr(float(y)))
     except Exception:
         return False
 
@@ -276,6 +303,8 @@ def _same(a, b, strict=False):
         ok = bool(a == b)
     except Exception:
         ok = False
+    if not ok and type(a) is type(b) and type(b).__eq__ is object.__eq__:
+        ok = True  # objet sans notion d'égalité (ex. générateur aléatoire) : on juge sur les résultats affichés
     return (ok, None if ok else "Ce n'est pas la valeur attendue.")
 
 
@@ -335,12 +364,43 @@ def _grab(ns, name, key):
 
 
 # ------------------------------------------------------------------ noyau de référence
-def _compute_exp(ns, code):
+def _short(v):
+    if isinstance(v, np.generic):
+        v = v.item()
+    if isinstance(v, pd.DataFrame):
+        return f"un DataFrame de forme {v.shape}"
+    if isinstance(v, pd.Series):
+        return "la Series " + repr(v.tolist()[:6])[:60]
+    r = repr(v)
+    return r if len(r) <= 70 else r[:67] + "…"
+
+
+def _eval_tests(ns, tests):
+    out = []
+    for expr in tests:
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                out.append((expr, True, _copy(eval(compile(expr, "<test>", "eval"), ns))))
+        except BaseException as e:  # noqa: BLE001
+            out.append((expr, False, f"{type(e).__name__}: {e}"))
+    return out
+
+
+def _is_mpl(v):
+    items = list(v.ravel()[:50]) if isinstance(v, np.ndarray) and v.dtype == object else [v]
+    return any(type(x).__module__.startswith("matplotlib") for x in items)
+
+
+def _compute_exp(ns, code, tests=()):
     res = _exec_in(ns, code)
     states = []
     for name, key in _targets(code):
         try:
-            states.append((name, key, _copy(_grab(ns, name, key))))
+            v = _grab(ns, name, key)
+            if _is_mpl(v):
+                continue  # figure / axes : comparés via leur contenu (figs), pas comme variables
+            states.append((name, key, _copy(v)))
         except Exception:
             pass
     return {
@@ -350,19 +410,21 @@ def _compute_exp(ns, code):
         "figs": res["figs"],
         "states": states,
         "err": res["err_text"] if res["exc"] is not None else None,
+        "tests": _eval_tests(ns, tests) if tests and res["exc"] is None else [],
     }
 
 
-def _ensure_exp(r, k, sols, alts_all):
+def _ensure_exp(r, k, sols, alts_all, tests_all):
     """Calcule (une seule fois) l'attendu de la cellule k, après avoir avancé le noyau de référence jusqu'à k."""
     while r["pos"] <= k:
         i = r["pos"]
         alts = alts_all[i] if i < len(alts_all) else []
         pre = _clone(r["ns"]) if alts else None
-        main = _compute_exp(r["ns"], sols[i])
+        tests = tests_all[i] if i < len(tests_all) else []
+        main = _compute_exp(r["ns"], sols[i], tests)
         alt_exps = []
         for code in alts:
-            alt_exps.append(_compute_exp(_clone(pre), code))
+            alt_exps.append(_compute_exp(_clone(pre), code, tests))
         r["exp"][i] = (main, alt_exps)
         r["pos"] = i + 1
     return r["exp"][k]
@@ -394,8 +456,30 @@ def _contains_scalar(u, s):
     text = u["stdout"]
     if isinstance(s, str):
         return bool(s) and s in text
-    nums = _nums(text)
-    return 0 < len(nums) <= 3 and any(_num_close(x, s) for x in nums)
+    nums = _NUM.findall(text)
+    es = repr(float(s)) if isinstance(s, float) else str(s)
+    return 0 < len(nums) <= 3 and any(_num_text_ok(x, es) for x in nums)
+
+
+_TOK = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?|[^\W\d_]+")
+
+
+def _is_numtok(t):
+    return bool(t) and (t[0].isdigit() or (t[0] == "-" and len(t) > 1 and t[1].isdigit()))
+
+
+def _tok_match(ut, et):
+    """Même suite de mots et de nombres (mise en forme libre : parenthèses, virgules, espaces)."""
+    a, b = _TOK.findall(ut), _TOK.findall(et)
+    if not b or len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        if _is_numtok(x) and _is_numtok(y):
+            if not _num_text_ok(x, y):
+                return False
+        elif x != y:
+            return False
+    return True
 
 
 def _out_match(u, e, strict):
@@ -413,10 +497,8 @@ def _out_match(u, e, strict):
         if _contains_scalar(u, e["value"]):
             return True, None
     big = isinstance(e["value"], (pd.DataFrame, pd.Series, np.ndarray)) if e["has_value"] else False
-    if not big and len(e_text) < 300:
-        a, b = _nums(u_text), _nums(e_text)
-        if a and len(a) == len(b) and all(_num_close(x, y) for x, y in zip(a, b)):
-            return True, None
+    if not big and len(e_text) < 300 and _tok_match(u_text, e_text):
+        return True, None
     if len(e_text) >= 8 and e_text in u_text:
         return True, None
     if not u["stdout"].strip() and not u["has_value"]:
@@ -424,16 +506,101 @@ def _out_match(u, e, strict):
     return False, reason or "Le résultat affiché ne correspond pas à ce qui est attendu."
 
 
+def _arr_close(a, b):
+    try:
+        return a.shape == b.shape and bool(np.allclose(a, b, rtol=RTOL, atol=1e-6, equal_nan=True))
+    except Exception:
+        return False
+
+
 def _figs_match(user_figs, exp_figs):
     if len(user_figs) < len(exp_figs):
         return False, "Il manque un graphique : pense à tracer puis à appeler plt.show()."
     for u, e in zip(user_figs, exp_figs):
-        if set(u["labels"]) != set(e["labels"]):
-            return False, "Le graphique ne montre pas les mêmes variables que demandé."
+        if u["axes"] != e["axes"]:
+            return False, "Le nombre de zones de dessin (sous-graphiques) ne correspond pas à la consigne."
         for k in ("lines", "patches", "collections", "texts"):
             if (u[k] > 0) != (e[k] > 0):
                 return False, "Le graphique n'a pas la forme attendue : relis la consigne (type de graphique, options demandées)."
+        if not set(e["labels"]) <= set(u["labels"]):
+            return False, "Les noms des axes ne correspondent pas à ceux demandés (xlabel / ylabel, ou mauvaises variables)."
+        if not set(e["titles"]) <= set(u["titles"]):
+            return False, "Le titre du graphique ne correspond pas à celui demandé."
+        if e["legend"] and not u["legend"]:
+            return False, "Il manque la légende (plt.legend())."
+        if not np.allclose(e["size"], (6.4, 4.8), atol=0.05) and not np.allclose(u["size"], e["size"], atol=0.05):
+            return False, "La taille de la figure (figsize) ne correspond pas à la consigne."
+        # courbes : x et y
+        rest = list(u["xy"])
+        for ex, ey in e["xy"]:
+            hit = next((i for i, (ux, uy) in enumerate(rest)
+                        if _arr_close(uy, ey) and (ex is None or (ux is not None and _arr_close(ux, ex)))), None)
+            if hit is None:
+                return False, "Les valeurs tracées (courbe ou ligne) ne correspondent pas à ce qui est attendu."
+            rest.pop(hit)
+        if e.get("markers", 0) > 0 and u.get("markers", 0) == 0:
+            return False, "Il manque les marqueurs (points) sur la courbe : option marker=\"o\"."
+        # barres / histogramme (hauteurs ET largeurs : couvre les barres horizontales), graphique par graphique
+        if e["heights"]:
+            for ua, ea in zip(u["per_ax"], e["per_ax"]):
+                ub = np.array(ua["bars"], dtype=float).reshape(-1, 2)
+                eb = np.array(ea["bars"], dtype=float).reshape(-1, 2)
+                if ub.shape != eb.shape or (eb.size and not _arr_close(ub, eb)):
+                    return False, "Les barres ne correspondent pas à ce qui est attendu (valeurs, ordre, nombre de barres ou de classes)."
+        # plusieurs zones de dessin : chacune doit contenir le bon contenu, dans l'ordre
+        if e["axes"] > 1:
+            for k, (ua, ea) in enumerate(zip(u["per_ax"], e["per_ax"]), 1):
+                if ea["title"] and ua["title"] != ea["title"]:
+                    return False, f"Le titre du graphique n°{k} ne correspond pas à celui demandé (bon graphique au bon endroit ?)."
+                if len(ua["pts"]) != len(ea["pts"]) or len(ua["lines"]) != len(ea["lines"]):
+                    return False, f"Le graphique n°{k} ne contient pas ce qui est demandé (bon type de graphique au bon endroit ?)."
+                for ul, el in zip(ua["lines"], ea["lines"]):
+                    if not _arr_close(ul, el):
+                        return False, f"Les courbes du graphique n°{k} ne correspondent pas."
+                for up_, ep_ in zip(ua["pts"], ea["pts"]):
+                    if up_.shape != ep_.shape or not _arr_close(up_, ep_):
+                        return False, f"Les points du graphique n°{k} ne correspondent pas à ce qui est attendu."
+        # cartes de chaleur
+        restm = list(u["mesh"])
+        for m in e["mesh"]:
+            hit = next((i for i, z in enumerate(restm) if _arr_close(z, m)), None)
+            if hit is None:
+                return False, "Les valeurs affichées dans la carte de chaleur ne correspondent pas."
+            restm.pop(hit)
+        # nuage de points
+        if e["points"]:
+            ep = np.vstack(e["points"])
+            up = np.vstack(u["points"]) if u["points"] else np.empty((0, 2))
+            if ep.shape != up.shape:
+                return False, "Le nombre de points tracés ne correspond pas."
+            ep = ep[np.lexsort((ep[:, 1], ep[:, 0]))]
+            up = up[np.lexsort((up[:, 1], up[:, 0]))]
+            if not _arr_close(up, ep):
+                return False, "Les points tracés ne correspondent pas à ce qui est attendu (mauvaises colonnes ou axes inversés ?)."
     return True, None
+
+
+def _kind(dt):
+    k = getattr(dt, "kind", "O")
+    s = str(dt)
+    if s == "category" or s.startswith("string"):
+        return "O"
+    return {"i": "i", "u": "i", "f": "f", "b": "b", "M": "M", "m": "m"}.get(k, "O")
+
+
+def _dtype_diff(uv, refv):
+    """Nom d'une colonne dont le type (entier / décimal / texte / date…) diffère, sinon None."""
+    try:
+        if isinstance(uv, pd.DataFrame) and isinstance(refv, pd.DataFrame):
+            for c in refv.columns:
+                if c in uv.columns and _kind(uv[c].dtype) != _kind(refv[c].dtype):
+                    return f"{c} : {uv[c].dtype} au lieu de {refv[c].dtype}"
+        elif isinstance(uv, pd.Series) and isinstance(refv, pd.Series):
+            if _kind(uv.dtype) != _kind(refv.dtype):
+                return f"{uv.dtype} au lieu de {refv.dtype}"
+    except Exception:
+        pass
+    return None
 
 
 def _state_match(ns, e, strict):
@@ -448,7 +615,19 @@ def _state_match(ns, e, strict):
         ok, why = _same(uv, refv, strict)
         if not ok:
             return False, f"{label} n'a pas la valeur attendue. {why}"
+        dd = _dtype_diff(uv, refv)
+        if dd:
+            return False, f"{label} a les bonnes valeurs mais pas le bon type de données ({dd})."
     return True, None
+
+
+def _comparable(v):
+    """Vrai si on peut réellement comparer cette valeur (pas un objet opaque comme un générateur aléatoire)."""
+    if isinstance(v, np.ndarray) and v.dtype == object:
+        return all(_comparable(x) for x in v.ravel()[:50]) and not any(
+            type(x).__module__.startswith("matplotlib") for x in v.ravel()[:50])
+    return isinstance(v, (pd.DataFrame, pd.Series, pd.Index, np.ndarray, str, bool, int, float, list, tuple,
+                          dict, set, frozenset, np.generic)) or hasattr(v, "get_params")
 
 
 def _compare(u, e, strict, ns):
@@ -458,7 +637,8 @@ def _compare(u, e, strict, ns):
     state_ok, state_why = (True, None)
     if e["states"]:
         state_ok, state_why = _state_match(ns, e, strict)
-    if e_out and (u_out or not e["states"]):
+    informative = any(_comparable(refv) for _n, _k, refv in e["states"])
+    if e_out and (u_out or not informative):
         ok, why = _out_match(u, e, strict)
         if not ok:
             return {"ok": False, "msg": why}
@@ -471,11 +651,24 @@ def _compare(u, e, strict, ns):
         ok, why = _figs_match(u["figs"], e["figs"])
         if not ok:
             return {"ok": False, "msg": why}
+    for expr, ok_ref, refval in e.get("tests", []):
+        if not ok_ref:
+            continue
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                got = eval(compile(expr, "<test>", "eval"), ns)
+        except BaseException as ex:  # noqa: BLE001
+            return {"ok": False, "msg": f"Ton code plante quand on l'essaie avec `{expr}` : {type(ex).__name__}: {ex}"}
+        same, _why = _same(got, refval, True)
+        if not same:
+            return {"ok": False, "msg": f"Test `{expr}` : on attend {_short(refval)}, ton code donne {_short(got)}."}
     return {"ok": True, "note": note}
 
 
-def check_cell(owner, setup, sols_json, alts_json, j, strict_json):
+def check_cell(owner, setup, sols_json, alts_json, j, strict_json, tests_json="[]"):
     sols, alts_all, strict = json.loads(sols_json), json.loads(alts_json), json.loads(strict_json)
+    tests_all = json.loads(tests_json)
     u = _last
     if not u:
         return json.dumps({"status": "unchecked", "msg": "Rien à vérifier."})
@@ -494,7 +687,7 @@ def check_cell(owner, setup, sols_json, alts_json, j, strict_json):
     if r["setup_err"]:
         return json.dumps({"status": "unchecked", "msg": "Correction automatique indisponible (préparation de référence échouée)."})
 
-    main, alt_exps = _ensure_exp(r, j, sols, alts_all)
+    main, alt_exps = _ensure_exp(r, j, sols, alts_all, tests_all)
     first_fail = None
     for e in [main] + alt_exps:
         if e["err"]:
