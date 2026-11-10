@@ -3,14 +3,35 @@
   "short_name": "The Signal",
   "description": "Private daily news and a learning academy for AI, data and computing.",
   "lang": "en",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/signal/?source=pwa",
+  "scope": "/signal/",
   "display": "standalone",
   "background_color": "#0D0F2B",
   "theme_color": "#0D0F2B",
   "icons": [
-    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "id": "/signal/?app=signal",
+  "orientation": "any",
+  "categories": [
+    "education",
+    "news"
   ]
 }
