@@ -1,4 +1,4 @@
-/* The Signal: offline shell. Everything cached here is already encrypted. Version 9e371684 */
+/* The Signal: offline shell. Everything cached here is already encrypted. Version 98659955 */
 const CACHE = 'signal-__VER__';
 const ASSETS = ['./', 'index.html', 'app.enc.json', 'data.enc.json', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
